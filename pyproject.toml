@@ -1,0 +1,27 @@
+[project]
+name = "tle-archive"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jonathan Olsten", email = "jolsten@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "loguru>=0.7.3",
+    "pydantic-settings>=2.8.1",
+    "sgp4>=2.24",
+    "tqdm>=4.67.1",
+]
+
+[project.scripts]
+tle-archive = "tle_archive:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

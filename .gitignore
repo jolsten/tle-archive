@@ -1,0 +1,4 @@
+.venv
+arx
+arx\*
+__pycache__
