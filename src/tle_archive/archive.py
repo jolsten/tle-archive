@@ -2,6 +2,7 @@ import datetime
 import os
 import pathlib
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, Union
 
 import tqdm
@@ -18,6 +19,10 @@ def tle_datetime(tle: TLETuple) -> datetime.datetime:
     sat = Satrec.twoline2rv(*tle)
     dt = sat_epoch_datetime(sat)
     return dt
+
+
+def tle_epoch(tle: TLETuple) -> float:
+    return float(tle[0][18:32].replace(" ", "0"))
 
 
 def tle_satnum(tle: TLETuple) -> str:
@@ -42,7 +47,7 @@ def collate(
     return result
 
 
-def read_tles(
+def read_tle(
     file: PathLike,
 ) -> list[TLETuple]:
     results = []
@@ -56,6 +61,22 @@ def read_tles(
                 current[1] = line
                 results.append(tuple(current))
     return results
+
+
+def read_tles(files: Iterable[PathLike]) -> list[TLETuple]:
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(read_tle, file) for file in files]
+        tles = []
+        for future in futures:
+            results = future.result()
+            tles.extend(results)
+    return tles
+
+
+def sort_unique(tles: list[TLETuple]) -> list[TLETuple]:
+    tles = sorted(tles, key=tle_satnum)
+    tles = sorted(tles, key=tle_epoch)
+    return list(dict.fromkeys(tles).keys())
 
 
 def write_tle(filename: pathlib.Path, tle_list: Iterable[TLETuple]) -> None:
