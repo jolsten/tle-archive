@@ -33,7 +33,7 @@ class AutoCollate(dict):
     """Autovivifify a new set if the key is missing"""
 
     def __missing__(self, key):
-        value = self[key] = set()
+        value = self[key] = {}
         return value
 
 
@@ -43,7 +43,7 @@ def collate(
     """Split a list of TLE tuples into a dictionary with the given key"""
     result = AutoCollate()
     for tle in tles:
-        result[key(tle)].add(tle)
+        result[key(tle)][tle] = None
     return result
 
 
