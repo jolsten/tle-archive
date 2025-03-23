@@ -3,11 +3,9 @@ import os
 import pathlib
 import shutil
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Iterable, Union
+from typing import Callable, Iterable, TypeVar, Union
 
 import tqdm
-from sgp4.api import Satrec
-from sgp4.conveniences import sat_epoch_datetime
 
 from tle_archive.config import Settings
 
@@ -15,45 +13,55 @@ PathLike = Union[str, bytes, os.PathLike, pathlib.Path]
 TLETuple = tuple[str, str]
 
 
-def tle_datetime(tle: TLETuple) -> datetime.datetime:
-    sat = Satrec.twoline2rv(*tle)
-    dt = sat_epoch_datetime(sat)
-    return dt
-
-
 def tle_epoch(tle: TLETuple) -> float:
-    return float(tle[0][18:32].replace(" ", "0"))
+    """Get the epoch (float) from a TLE"""
+    epoch = float(tle[0][18:32].replace(" ", "0"))
+    if epoch // 1000 >= 57:
+        epoch += 19000
+    else:
+        epoch += 20000
+    return epoch
+
+
+def tle_date(tle: TLETuple) -> str:
+    """Get the date (as str) from a TLE."""
+    epoch = tle_epoch(tle)
+    year, doy = divmod(epoch, 1000)
+    doy = doy // 1
+    dt = datetime.datetime(int(year), 1, 1) + datetime.timedelta(days=int(doy))
+    return dt.strftime("%Y%m%d")
 
 
 def tle_satnum(tle: TLETuple) -> str:
+    """Extract the (Alpha-5) Satnum from a TLE."""
     return tle[0][2:7].replace(" ", "0")
 
 
-class AutoCollate(dict):
-    """Autovivifify a new set if the key is missing"""
-
-    def __missing__(self, key):
-        value = self[key] = {}
-        return value
+GroupByKey = TypeVar("GroupByKey")
 
 
-def collate(
-    tles: list[TLETuple], key: Callable[[TLETuple], str]
-) -> dict[str, set[TLETuple]]:
-    """Split a list of TLE tuples into a dictionary with the given key"""
-    result = AutoCollate()
+def group_by(
+    tles: list[TLETuple], key: Callable[[TLETuple], GroupByKey]
+) -> dict[GroupByKey, list[TLETuple]]:
+    """Groups input TLEs by values from a callable key."""
+    results: dict[GroupByKey, list[TLETuple]] = {}
     for tle in tles:
-        result[key(tle)][tle] = None
-    return result
+        group = key(tle)
+        if group not in results:
+            results[group] = []
+        results[group].append(tle)
+    return results
 
 
 def read_tle(
     file: PathLike,
 ) -> list[TLETuple]:
+    """Read a single TLE file."""
     results = []
     with open(file, "r") as f:
         current = [None, None]
         for line in f:
+            line = line.rstrip()
             if line[0] == "1":
                 current[0] = line
                 current[1] = None
@@ -64,6 +72,7 @@ def read_tle(
 
 
 def read_tles(files: Iterable[PathLike]) -> list[TLETuple]:
+    """Read multiple TLE files."""
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(read_tle, file) for file in files]
         tles = []
@@ -73,15 +82,14 @@ def read_tles(files: Iterable[PathLike]) -> list[TLETuple]:
     return tles
 
 
-def sort_unique(tles: list[TLETuple]) -> list[TLETuple]:
-    tles = sorted(tles, key=tle_satnum)
-    tles = sorted(tles, key=tle_epoch)
+def unique(tles: list[TLETuple]) -> list[TLETuple]:
+    """Returns input as a list list ensuring unique entries."""
     return list(dict.fromkeys(tles).keys())
 
 
 def write_tle(filename: pathlib.Path, tle_list: Iterable[TLETuple]) -> None:
     with open(filename, "w") as f:
-        for line1, line2 in sorted(tle_list, key=tle_datetime):
+        for line1, line2 in sorted(tle_list, key=tle_epoch):
             print(line1, file=f)
             print(line2, file=f)
 
@@ -94,7 +102,7 @@ def ingest(config: Settings, progress_bar: bool = True):
         tles = read_tles(file)
         ingest_tles.extend(tles)
 
-    collated = collate(ingest_tles, key=tle_satnum)
+    collated = group_by(ingest_tles, key=tle_satnum)
     iterable = sorted(collated.keys())
     if progress_bar:
         iterable = tqdm.tqdm(iterable)
